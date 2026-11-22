@@ -325,6 +325,12 @@ class MainActivity : ComponentActivity() {
             }
             if (!ok) toast("That's the maximum")
         }
+        fun reorder(kind: ListKind, keys: List<String>) = when (kind) {
+            ListKind.Home -> prefs.setPinnedOrder(keys)
+            ListKind.Dock -> prefs.dock.set(keys)
+            ListKind.Left -> prefs.leftPanel.set(keys)
+            ListKind.Right -> prefs.rightPanel.set(keys)
+        }
         fun maxFor(kind: ListKind) = when (kind) {
             ListKind.Home -> Prefs.MAX_PINNED
             ListKind.Dock -> Prefs.MAX_DOCK
@@ -342,7 +348,7 @@ class MainActivity : ComponentActivity() {
             AppChecklist(
                 title = title, subtitle = sub, apps = visible, selected = listFor(kind), max = maxFor(kind),
                 showIcons = kind != ListKind.Home, step = step, cta = cta,
-                onToggle = { toggle(kind, it) }, onDone = onDone,
+                onToggle = { toggle(kind, it) }, onReorder = { reorder(kind, it) }, onDone = onDone,
             )
         }
 

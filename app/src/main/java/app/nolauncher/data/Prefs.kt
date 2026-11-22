@@ -100,6 +100,13 @@ class Prefs(context: Context) {
         return true
     }
 
+    /** Same apps, new order (drag to rearrange). */
+    fun setPinnedOrder(keys: List<String>) {
+        val next = keys.distinct().filter { it in _pinned.value }.take(MAX_PINNED)
+        _pinned.value = next
+        sp.edit { putString(K_PINNED, next.joinToString("\n")) }
+    }
+
     fun setHidden(key: String, hide: Boolean) {
         val next = if (hide) _hidden.value + key else _hidden.value - key
         _hidden.value = next

@@ -35,6 +35,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import app.nolauncher.data.AppEntry
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
 import app.nolauncher.data.AppGroup
 
 @Composable
@@ -292,9 +297,17 @@ fun LimitsScreen(
 }
 
 @Composable
-private fun Check(label: String, on: Boolean, number: Int?, icon: AppEntry? = null, onClick: () -> Unit) {
+private fun Check(
+    label: String,
+    on: Boolean,
+    number: Int?,
+    icon: AppEntry? = null,
+    handle: Modifier? = null,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
     Row(
-        Modifier.fillMaxWidth().quietClick(onClick = onClick).padding(horizontal = 28.dp, vertical = 12.dp),
+        modifier.fillMaxWidth().quietClick(onClick = onClick).padding(start = 28.dp, end = 28.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -307,6 +320,11 @@ private fun Check(label: String, on: Boolean, number: Int?, icon: AppEntry? = nu
             color = if (on) Palette.Ink else Palette.Muted,
             modifier = Modifier.weight(1f),
         )
+        if (handle != null) {
+            // Drag here to move the app up or down.
+            Box(handle.size(40.dp), contentAlignment = Alignment.Center) { DragGlyph() }
+            Spacer(Modifier.width(6.dp))
+        }
         Box(
             Modifier.size(26.dp).clip(CircleShape)
                 .then(if (on) Modifier.background(Palette.Ink) else Modifier.border(1.5.dp, Palette.Faint, CircleShape)),
@@ -317,7 +335,22 @@ private fun Check(label: String, on: Boolean, number: Int?, icon: AppEntry? = nu
     }
 }
 
-/** Choose an ordered set of apps (home, dock, panels). Numbers show the order things will appear in. */
+/** Three short lines: "drag me". */
+@Composable
+private fun DragGlyph() {
+    androidx.compose.foundation.Canvas(Modifier.size(18.dp)) {
+        val st = 1.8.dp.toPx()
+        listOf(0.3f, 0.5f, 0.7f).forEach { y ->
+            drawLine(Palette.Muted, androidx.compose.ui.geometry.Offset(size.width * 0.1f, size.height * y),
+                androidx.compose.ui.geometry.Offset(size.width * 0.9f, size.height * y), st, androidx.compose.ui.graphics.StrokeCap.Round)
+        }
+    }
+}
+
+/**
+ * Choose an ordered set of apps (home, dock, panels). Numbers show the order things will appear in.
+ * Chosen apps can be dragged by their handle (or long-pressed) to rearrange them.
+ */
 @Composable
 fun AppChecklist(
     title: String,
@@ -329,19 +362,87 @@ fun AppChecklist(
     step: String?,
     cta: String,
     onToggle: (AppEntry) -> Unit,
+    onReorder: (List<String>) -> Unit,
     onDone: () -> Unit,
 ) {
-    // Chosen apps first (in order), then the rest A–Z.
-    val ordered = remember(apps, selected) {
-        val byKey = apps.associateBy { it.key }
-        selected.mapNotNull { byKey[it] } + apps.filter { it.key !in selected }
+    val byKey = remember(apps) { apps.associateBy { it.key } }
+    // The drag handlers outlive recompositions: always read the latest list and callback.
+    val latestSelected by androidx.compose.runtime.rememberUpdatedState(selected)
+    val latestReorder by androidx.compose.runtime.rememberUpdatedState(onReorder)
+    // While dragging, the order lives here; otherwise it follows what's saved.
+    var dragKey by remember { mutableStateOf<String?>(null) }
+    var dragOffset by remember { mutableStateOf(0f) }
+    val order = remember { androidx.compose.runtime.mutableStateListOf<String>() }
+    if (dragKey == null && order.toList() != selected) { order.clear(); order.addAll(selected) }
+    val chosen = order.mapNotNull { byKey[it] }
+    val rest = remember(apps, selected) { apps.filter { it.key !in selected } }
+    val state = androidx.compose.foundation.lazy.rememberLazyListState()
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+
+    fun start(key: String) {
+        dragKey = key; dragOffset = 0f
+        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
     }
+    fun move(dy: Float) {
+        val key = dragKey ?: return
+        dragOffset += dy
+        val i = order.indexOf(key)
+        val info = state.layoutInfo.visibleItemsInfo
+        val me = info.firstOrNull { it.key == key } ?: return
+        // Past half of the neighbour → swap places with it.
+        if (dragOffset > 0 && i < order.size - 1) {
+            val next = info.firstOrNull { it.key == order[i + 1] }
+            if (next != null && dragOffset > next.size / 2f) {
+                order.add(i + 1, order.removeAt(i)); dragOffset -= next.size
+            }
+        } else if (dragOffset < 0 && i > 0) {
+            val prev = info.firstOrNull { it.key == order[i - 1] }
+            if (prev != null && -dragOffset > prev.size / 2f) {
+                order.add(i - 1, order.removeAt(i)); dragOffset += prev.size
+            }
+        }
+        if (me.index == 0) dragOffset = dragOffset.coerceAtLeast(0f)
+    }
+    fun end() {
+        if (dragKey != null) {
+            val next = order.toList()
+            dragKey = null; dragOffset = 0f
+            if (next != latestSelected) latestReorder(next)
+        }
+    }
+
     Box(Modifier.fillMaxSize().systemBarsPadding()) {
-        LazyColumn(contentPadding = PaddingValues(bottom = 120.dp)) {
-            item { Header(title, "$subtitle  ${selected.size}/$max", step) }
-            items(ordered, key = { it.key }) { app ->
-                val idx = selected.indexOf(app.key)
-                Check(app.label, idx >= 0, idx + 1, if (showIcons) app else null) { onToggle(app) }
+        LazyColumn(state = state, contentPadding = PaddingValues(bottom = 120.dp)) {
+            item(key = "header") {
+                Header(title, "$subtitle  ${selected.size}/$max" + if (selected.size > 1) "\nDrag ≡ to rearrange." else "", step)
+            }
+            items(chosen, key = { it.key }) { app ->
+                val dragging = app.key == dragKey
+                val dragMod = Modifier.pointerInput(app.key) {
+                    detectDragGestures(
+                        onDragStart = { start(app.key) },
+                        onDragEnd = { end() }, onDragCancel = { end() },
+                    ) { change, d -> change.consume(); move(d.y) }
+                }
+                Check(
+                    app.label, true, order.indexOf(app.key) + 1, if (showIcons) app else null,
+                    handle = dragMod,
+                    modifier = Modifier
+                        .then(if (dragging) Modifier.zIndex(1f) else Modifier.animateItem())
+                        .graphicsLayer {
+                            if (dragging) { translationY = dragOffset; scaleX = 1.03f; scaleY = 1.03f }
+                        }
+                        .background(if (dragging) Palette.Surface else androidx.compose.ui.graphics.Color.Transparent)
+                        .pointerInput(app.key) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { start(app.key) },
+                                onDragEnd = { end() }, onDragCancel = { end() },
+                            ) { change, d -> change.consume(); move(d.y) }
+                        },
+                ) { onToggle(app) }
+            }
+            items(rest, key = { it.key }) { app ->
+                Check(app.label, false, null, if (showIcons) app else null, modifier = Modifier.animateItem()) { onToggle(app) }
             }
         }
         PrimaryButton(
