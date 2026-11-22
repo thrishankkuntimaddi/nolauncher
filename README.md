@@ -8,7 +8,7 @@ It doesn't give you more ways to open things — it gives you fewer, and holds y
 - **Home** — up to 7 essential apps as plain text. Black, no wallpaper.
 - **Side panels** — a short swipe right or left on home: your home names glide to the edge and turn into small monochrome icons, and a panel of important apps (names only, centred) fills the rest of the screen. Pure black, no tint. Width adapts to the screen.
 - **Search bar + dock** — "Search apps" with a round button beside it. Tap the button: search shrinks to a circle and a dock of small monochrome icons opens (Focus, Settings, quick apps — scroll sideways). Tap the circle or › to get the search bar back.
-- **All apps** — swipe up for an A–Z list that curves away like a drum. Swipe sideways to walk through groups (Messaging, Phone, AI, Social, Watch & Listen, Finance, Shopping & Food, Travel, Work, Tools, Utilities, Games, Other) — it loops. Scrolling shrinks the search bar back into the dock.
+- **All apps** — swipe up for an A–Z list that curves away like a drum. Swipe sideways to walk through groups (Messaging, Phone, AI, Social, Watch & Listen, Finance, Shopping & Food, Travel, Work, Tools, Utilities, Games, Other) — it loops.
 - **Time limits** — daily minutes per app (e.g. X 10 min, Reddit 5 min, YouTube 10 min). A quiet pill warns at 5 min and counts down the last minute; at zero the app closes and you're sent home.
   - Stricter limits apply now; looser ones (or removing one) only start **tomorrow**.
   - Studying? **One** 15-minute extension per app per day, after a 10-second pause.

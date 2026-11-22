@@ -421,10 +421,10 @@ class MainActivity : ComponentActivity() {
                         onOpen = open,
                         onMenu = showMenu,
                         onClose = { screen = Screen.Home },
+                        // Scrolling only puts the keyboard away; the dock opens only from its button.
                         onScrolled = {
                             keyboard?.hide()
                             focusManager.clearFocus()
-                            if (query.isEmpty()) drawerCollapsed = true
                         },
                         onEditGroup = { g -> editingGroup = g.id; screen = Screen.GroupEdit },
                         onWebSearch = ::webSearch,
@@ -593,6 +593,7 @@ class MainActivity : ComponentActivity() {
                         panelClose()
                         editList(if (leftSide) ListKind.Left else ListKind.Right, Screen.Home)
                     },
+                    homeCount = homeApps.size,
                 )
             }
 

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -37,6 +38,9 @@ import kotlin.math.abs
 /** Width of the strip where home's apps sit as small icons while a panel is open. */
 val ICON_STRIP = 76.dp
 
+/** One row on home and in the panels — shared so names line up with icons. */
+val HOME_ROW = 48.dp
+
 /** The panel takes everything except the icon strip (capped on tablets/foldables). */
 fun panelWidth(screen: Dp): Dp = min(screen - ICON_STRIP, 520.dp)
 
@@ -56,6 +60,7 @@ fun SidePanels(
     onOpen: (AppEntry) -> Unit,
     onMenu: (AppEntry) -> Unit,
     onEdit: (leftSide: Boolean) -> Unit,
+    homeCount: Int,
 ) {
     if (progress == 0f) return
     val drag by rememberUpdatedState(onDrag)
@@ -81,16 +86,22 @@ fun SidePanels(
                 .background(Color.Black)
                 .then(dragMod)
                 .pointerInput(fromLeft) { detectTapGestures(onLongPress = { onEdit(fromLeft) }) }
-                .systemBarsPadding(),
+                // Same frame as home, so both columns share one centre line.
+                .systemBarsPadding()
+                .padding(bottom = BAR_SPACE),
         ) {
             val apps = if (fromLeft) left else right
+            // Rows share home's grid: same height, and when the two lists differ by an odd
+            // number of apps, nudge by half a row so every name sits level with an icon.
+            val nudge = if ((homeCount - apps.size) % 2 != 0 && homeCount > 0) HOME_ROW / 2 else 0.dp
             Column(
                 Modifier
                     .align(Alignment.Center)
+                    .offset(y = nudge)
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 4.dp, vertical = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                    .padding(horizontal = 4.dp),
+                verticalArrangement = Arrangement.Top,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 if (apps.isEmpty()) {
@@ -101,11 +112,9 @@ fun SidePanels(
                     )
                 }
                 apps.forEach { app ->
-                    AppLabel(
-                        app.label, 30.sp,
-                        modifier = Modifier.padding(vertical = 2.dp),
-                        onLongClick = { onMenu(app) },
-                    ) { onOpen(app) }
+                    Box(Modifier.height(HOME_ROW), contentAlignment = Alignment.Center) {
+                        AppLabel(app.label, 30.sp, onLongClick = { onMenu(app) }) { onOpen(app) }
+                    }
                 }
             }
         }

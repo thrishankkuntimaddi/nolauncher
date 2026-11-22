@@ -106,13 +106,13 @@ fun BottomBar(
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(50))
                 .background(Palette.Surface)
-                .then(
+                .quietClick(onLongClick = onSettings) {
                     when {
-                        !expanded -> Modifier.quietClick(onLongClick = onSettings, onClick = onHideDock)
-                        !editable -> Modifier.quietClick(onLongClick = onSettings, onClick = onSearchTap)
-                        else -> Modifier
+                        !expanded -> onHideDock()
+                        !editable -> onSearchTap()
+                        else -> { runCatching { focus.requestFocus() }; keyboard?.show() }
                     }
-                )
+                }
                 .padding(start = 17.dp + 1.dp * t, end = 14.dp * t),
             verticalAlignment = Alignment.CenterVertically,
         ) {

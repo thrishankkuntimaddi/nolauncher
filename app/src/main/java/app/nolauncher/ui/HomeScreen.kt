@@ -98,7 +98,7 @@ fun HomeScreen(
                 )
             }
             apps.forEach { app ->
-                Box(Modifier.height(48.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.height(HOME_ROW), contentAlignment = Alignment.Center) {
                     if (k < 0.98f) {
                         AppLabel(
                             app.label, 30.sp,
