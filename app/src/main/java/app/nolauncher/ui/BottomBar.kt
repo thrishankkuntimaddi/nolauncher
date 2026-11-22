@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -48,18 +49,22 @@ val BAR_SPACE = BAR_HEIGHT + 32.dp
 
 /**
  * Two shapes, one bar:
- *  - collapsed: a search circle on the left + a pill of small monochrome icons (Focus, quick apps, Settings)
- *    that scrolls sideways;
- *  - expanded: the circle stretches into a full "Search apps" field and the pill slides away.
+ *  - search:  [ 🔍 Search apps ............ ] ( ⁘ )
+ *  - dock:    ( 🔍 ) [ ☾ ⚙ icon icon icon … | › ]
+ * Tapping ⁘ slides the search field into a circle and grows the dock out of the button.
+ * Tapping the circle or › folds the dock away and brings the search bar back.
  */
 @Composable
 fun BottomBar(
     expanded: Boolean,
+    editable: Boolean,
     query: String,
     onQuery: (String) -> Unit,
     focusSignal: Int,
     onGo: () -> Unit,
     onSearchTap: () -> Unit,
+    onShowDock: () -> Unit,
+    onHideDock: () -> Unit,
     dock: List<AppEntry>,
     focusOn: Boolean,
     onFocus: () -> Unit,
@@ -78,7 +83,7 @@ fun BottomBar(
     val focus = androidx.compose.runtime.remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(focusSignal) {
-        if (focusSignal > 0 && expanded) {
+        if (focusSignal > 0 && editable) {
             delay(180)
             runCatching { focus.requestFocus() }
             keyboard?.show()
@@ -90,54 +95,74 @@ fun BottomBar(
     ) {
         val gap = 10.dp
         val full = maxWidth
-        val searchW = BAR_HEIGHT + (full - BAR_HEIGHT) * t
+        val wide = full - BAR_HEIGHT - gap
+        val searchW = BAR_HEIGHT + (wide - BAR_HEIGHT) * t
+        val dockW = wide + (BAR_HEIGHT - wide) * t
 
-        // Search: circle ↔ field
+        // Search: circle ↔ pill
         Row(
             Modifier
                 .width(searchW)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(50))
                 .background(Palette.Surface)
-                .then(if (!expanded) Modifier.quietClick(onLongClick = onSettings, onClick = onSearchTap) else Modifier)
+                .then(
+                    when {
+                        !expanded -> Modifier.quietClick(onLongClick = onSettings, onClick = onHideDock)
+                        !editable -> Modifier.quietClick(onLongClick = onSettings, onClick = onSearchTap)
+                        else -> Modifier
+                    }
+                )
                 .padding(start = 17.dp + 1.dp * t, end = 14.dp * t),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            GlyphIcon(Glyph.Search, if (expanded) Palette.Muted else Palette.Ink, 18.dp)
-            if (expanded) {
+            GlyphIcon(Glyph.Search, if (t > 0.5f) Palette.Muted else Palette.Ink, 18.dp)
+            if (t > 0.3f) {
                 Spacer(Modifier.width(10.dp))
                 Box(
                     Modifier.weight(1f).graphicsLayer { alpha = ((t - 0.5f) * 2f).coerceIn(0f, 1f) },
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     if (query.isEmpty()) Txt("Search apps", color = Palette.Muted, size = 15.sp, maxLines = 1)
-                    BasicTextField(
-                        value = query,
-                        onValueChange = onQuery,
-                        singleLine = true,
-                        textStyle = TextStyle(color = Palette.Ink, fontSize = 15.sp),
-                        cursorBrush = SolidColor(Palette.Ink),
-                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Go),
-                        keyboardActions = KeyboardActions(onGo = { onGo() }),
-                        modifier = Modifier.fillMaxWidth().focusRequester(focus),
-                    )
+                    if (editable && expanded) {
+                        BasicTextField(
+                            value = query,
+                            onValueChange = onQuery,
+                            singleLine = true,
+                            textStyle = TextStyle(color = Palette.Ink, fontSize = 15.sp),
+                            cursorBrush = SolidColor(Palette.Ink),
+                            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Go),
+                            keyboardActions = KeyboardActions(onGo = { onGo() }),
+                            modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                        )
+                    }
                 }
             }
         }
 
-        // Dock pill: slides out to the right as the search field grows.
-        if (t < 0.7f) {
-            val dockW = full - BAR_HEIGHT - gap
-            Box(
-                Modifier
-                    .offset(x = BAR_HEIGHT + gap + (full - BAR_HEIGHT) * t)
-                    .width(dockW)
-                    .fillMaxHeight()
-                    .graphicsLayer { alpha = (1f - t / 0.7f).coerceIn(0f, 1f) }
-                    .clip(RoundedCornerShape(50))
-                    .background(Palette.Surface),
-            ) {
-                Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+        // Right side: the round button grows into the dock pill.
+        Box(
+            Modifier
+                .offset(x = full - dockW)
+                .width(dockW)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(50))
+                .background(Palette.Surface),
+        ) {
+            if (t > 0.02f) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = ((t - 0.4f) / 0.6f).coerceIn(0f, 1f) }
+                        .quietClick(onLongClick = onEditDock, onClick = onShowDock),
+                    contentAlignment = Alignment.Center,
+                ) { GlyphIcon(Glyph.Dots, Palette.Ink, 18.dp) }
+            }
+            if (t < 0.6f) {
+                Row(
+                    Modifier.fillMaxHeight().graphicsLayer { alpha = (1f - t / 0.6f).coerceIn(0f, 1f) },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     LazyRow(
                         Modifier.weight(1f).fillMaxHeight(),
                         contentPadding = PaddingValues(start = 6.dp, end = 2.dp),
@@ -149,15 +174,20 @@ fun BottomBar(
                                 GlyphIcon(Glyph.Moon, if (focusOn) Palette.Bg else Palette.Ink, 18.dp)
                             }
                         }
+                        item(key = "settings") {
+                            DockSlot(onClick = onSettings, onLongClick = onEditDock) {
+                                GlyphIcon(Glyph.Gear, Palette.Ink, 19.dp)
+                            }
+                        }
                         items(dock, key = { it.key }) { app ->
-                            DockSlot(onClick = { onOpen(app) }, onLongClick = onEditDock) { AppIcon(app, 22.dp) }
+                            DockSlot(onClick = { onOpen(app) }, onLongClick = onEditDock) { AppIcon(app, 21.dp) }
                         }
                     }
-                    // Settings stays pinned at the end so it's always reachable.
+                    // Pinned at the end: fold the dock away, back to the search bar.
                     Box(Modifier.width(1.dp).height(22.dp).background(Palette.Faint))
                     Box(Modifier.padding(horizontal = 5.dp)) {
-                        DockSlot(onClick = onSettings, onLongClick = onEditDock) {
-                            GlyphIcon(Glyph.Gear, Palette.Ink, 19.dp)
+                        DockSlot(onClick = onHideDock, onLongClick = onEditDock) {
+                            GlyphIcon(Glyph.Chevron, Palette.Ink, 18.dp)
                         }
                     }
                 }

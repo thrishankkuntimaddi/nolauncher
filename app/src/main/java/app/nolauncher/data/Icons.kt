@@ -28,7 +28,8 @@ class IconLoader(context: Context) {
         val id = "${app.key}@$sizePx"
         cache.get(id)?.let { return it }
         return withContext(Dispatchers.IO) {
-            runCatching { render(app, sizePx) }.getOrNull()?.asImageBitmap()?.also { cache.put(id, it) }
+            runCatching { render(app, sizePx * 2)?.let { normalize(it, sizePx) } }.getOrNull()
+                ?.asImageBitmap()?.also { cache.put(id, it) }
         }
     }
 
@@ -59,6 +60,38 @@ class IconLoader(context: Context) {
         }
         toWhiteTones(bmp)
         return bmp
+    }
+
+    /**
+     * Every logo has different padding and proportions. Trim to the visible shape, then fit it
+     * into the same box so all icons carry the same visual weight.
+     */
+    private fun normalize(src: Bitmap, size: Int): Bitmap {
+        val w = src.width
+        val h = src.height
+        val px = IntArray(w * h)
+        src.getPixels(px, 0, w, 0, 0, w, h)
+        var l = w; var t = h; var r = -1; var b = -1
+        for (y in 0 until h) for (x in 0 until w) {
+            if ((px[x + y * w] ushr 24) > 40) {
+                if (x < l) l = x; if (x > r) r = x
+                if (y < t) t = y; if (y > b) b = y
+            }
+        }
+        val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        if (r < l || b < t) return out
+        val cw = (r - l + 1).toFloat()
+        val ch = (b - t + 1).toFloat()
+        val box = size * 0.86f
+        val scale = box / maxOf(cw, ch)
+        val dw = cw * scale
+        val dh = ch * scale
+        val dst = android.graphics.RectF((size - dw) / 2f, (size - dh) / 2f, (size + dw) / 2f, (size + dh) / 2f)
+        Canvas(out).drawBitmap(
+            src, android.graphics.Rect(l, t, r + 1, b + 1), dst,
+            android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG or android.graphics.Paint.ANTI_ALIAS_FLAG),
+        )
+        return out
     }
 
     /**

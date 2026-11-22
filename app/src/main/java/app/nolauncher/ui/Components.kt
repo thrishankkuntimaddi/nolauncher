@@ -114,7 +114,7 @@ fun AppLabel(
     )
 }
 
-enum class Glyph { Search, Moon, Sliders, Gear }
+enum class Glyph { Search, Moon, Sliders, Gear, Dots, Chevron }
 
 @Composable
 fun GlyphIcon(glyph: Glyph, color: Color, size: Dp = 20.dp) {
@@ -130,6 +130,15 @@ fun GlyphIcon(glyph: Glyph, color: Color, size: Dp = 20.dp) {
                 val outer = Path().apply { addOval(Rect(Offset(w * 0.5f, w * 0.5f), w * 0.4f)) }
                 val bite = Path().apply { addOval(Rect(Offset(w * 0.74f, w * 0.3f), w * 0.33f)) }
                 drawPath(Path().apply { op(outer, bite, PathOperation.Difference) }, color)
+            }
+            Glyph.Chevron -> {
+                drawLine(color, Offset(w * 0.38f, w * 0.22f), Offset(w * 0.66f, w * 0.5f), stroke * 1.2f, StrokeCap.Round)
+                drawLine(color, Offset(w * 0.66f, w * 0.5f), Offset(w * 0.38f, w * 0.78f), stroke * 1.2f, StrokeCap.Round)
+            }
+            Glyph.Dots -> {
+                for (i in 0..1) for (j in 0..1) {
+                    drawCircle(color, w * 0.11f, Offset(w * (0.32f + 0.36f * i), w * (0.32f + 0.36f * j)))
+                }
             }
             Glyph.Gear -> {
                 val c = Offset(w / 2, w / 2)

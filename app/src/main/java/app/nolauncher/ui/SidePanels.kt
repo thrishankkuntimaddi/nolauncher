@@ -34,13 +34,16 @@ import androidx.compose.ui.unit.sp
 import app.nolauncher.data.AppEntry
 import kotlin.math.abs
 
-/** Panel width: ~80% of the screen on phones, capped on tablets/foldables so it never feels huge. */
-@Composable
-fun panelWidth(screen: Dp): Dp = min(screen * 0.8f, 440.dp)
+/** Width of the strip where home's apps sit as small icons while a panel is open. */
+val ICON_STRIP = 76.dp
+
+/** The panel takes everything except the icon strip (capped on tablets/foldables). */
+fun panelWidth(screen: Dp): Dp = min(screen - ICON_STRIP, 520.dp)
 
 /**
  * progress: 0 = closed, +1 = left panel fully open (came from a swipe right),
- * -1 = right panel fully open (came from a swipe left). Home stays visible in the remaining strip.
+ * -1 = right panel fully open (came from a swipe left). Home slides aside and stays visible in the
+ * remaining strip. Everything stays pure black: names only, no tint, no icons.
  */
 @Composable
 fun SidePanels(
@@ -57,7 +60,6 @@ fun SidePanels(
     if (progress == 0f) return
     val drag by rememberUpdatedState(onDrag)
     val end by rememberUpdatedState(onDragEnd)
-    val close by rememberUpdatedState(onClose)
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val w = panelWidth(maxWidth)
@@ -70,22 +72,13 @@ fun SidePanels(
             }
         }
 
-        // The visible strip of home: dimmed, tap to close.
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.55f * p))
-                .then(dragMod)
-                .pointerInput(Unit) { detectTapGestures { close() } },
-        )
-
         val x = if (fromLeft) -w * (1f - p) else maxWidth - w * p
         Box(
             Modifier
                 .offset(x = x)
                 .width(w)
                 .fillMaxHeight()
-                .background(Color(0xFF0C0C0E))
+                .background(Color.Black)
                 .then(dragMod)
                 .pointerInput(fromLeft) { detectTapGestures(onLongPress = { onEdit(fromLeft) }) }
                 .systemBarsPadding(),
@@ -93,35 +86,26 @@ fun SidePanels(
             val apps = if (fromLeft) left else right
             Column(
                 Modifier
-                    .align(Alignment.CenterStart)
+                    .align(Alignment.Center)
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 28.dp, vertical = 24.dp),
+                    .padding(horizontal = 4.dp, vertical = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
-                horizontalAlignment = if (fromLeft) Alignment.Start else Alignment.End,
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 if (apps.isEmpty()) {
                     Txt(
                         "Nothing here yet.\nHold to choose apps.",
                         color = Palette.Muted, size = 15.sp,
-                        align = if (fromLeft) TextAlign.Start else TextAlign.End,
+                        align = TextAlign.Center,
                     )
                 }
                 apps.forEach { app ->
-                    Row(
-                        Modifier.quietClick(onLongClick = { onMenu(app) }) { onOpen(app) }.padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (fromLeft) {
-                            AppIcon(app, 26.dp)
-                            Spacer(Modifier.width(16.dp))
-                            Txt(app.label, size = 26.sp, weight = FontWeight.SemiBold, maxLines = 1)
-                        } else {
-                            Txt(app.label, size = 26.sp, weight = FontWeight.SemiBold, maxLines = 1)
-                            Spacer(Modifier.width(16.dp))
-                            AppIcon(app, 26.dp)
-                        }
-                    }
+                    AppLabel(
+                        app.label, 30.sp,
+                        modifier = Modifier.padding(vertical = 2.dp),
+                        onLongClick = { onMenu(app) },
+                    ) { onOpen(app) }
                 }
             }
         }

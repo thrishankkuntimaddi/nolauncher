@@ -6,8 +6,8 @@ It doesn't give you more ways to open things — it gives you fewer, and holds y
 ## What it does
 
 - **Home** — up to 7 essential apps as plain text. Black, no wallpaper.
-- **Side panels** — swipe right or left on home: a panel slides over ~80% of the screen (home stays visible in the rest) with your important apps — names plus their logos in monochrome. Width adapts to the screen.
-- **Dock** — a search circle plus a pill of small monochrome icons: Focus, extra quick apps (scroll sideways), and Settings.
+- **Side panels** — a short swipe right or left on home: your home names glide to the edge and turn into small monochrome icons, and a panel of important apps (names only, centred) fills the rest of the screen. Pure black, no tint. Width adapts to the screen.
+- **Search bar + dock** — "Search apps" with a round button beside it. Tap the button: search shrinks to a circle and a dock of small monochrome icons opens (Focus, Settings, quick apps — scroll sideways). Tap the circle or › to get the search bar back.
 - **All apps** — swipe up for an A–Z list that curves away like a drum. Swipe sideways to walk through groups (Messaging, Phone, AI, Social, Watch & Listen, Finance, Shopping & Food, Travel, Work, Tools, Utilities, Games, Other) — it loops. Scrolling shrinks the search bar back into the dock.
 - **Time limits** — daily minutes per app (e.g. X 10 min, Reddit 5 min, YouTube 10 min). A quiet pill warns at 5 min and counts down the last minute; at zero the app closes and you're sent home.
   - Stricter limits apply now; looser ones (or removing one) only start **tomorrow**.
@@ -23,6 +23,7 @@ It doesn't give you more ways to open things — it gives you fewer, and holds y
 | Swipe up | All apps (swipe sideways there for groups) |
 | Swipe down | Who's waiting (notification names) |
 | Long-press an app | Keep on home, time limit, rename, hide, info, uninstall |
+| Tap ⁘ beside search | Open the dock (circle or › closes it) |
 | Long-press the dock | Edit dock |
 | Long-press a panel / group title | Edit it |
 | Long-press empty home | Settings |
