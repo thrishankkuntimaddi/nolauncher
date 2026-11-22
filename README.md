@@ -6,33 +6,33 @@ It doesn't give you more ways to open things — it gives you fewer, and holds y
 ## What it does
 
 - **Home** — up to 7 essential apps as plain text. Black, no wallpaper.
-- **Groups, in a circle** — swipe left or right to move through your groups (Finance, Social, Messaging, Phone, Tools…) and back round to home. Same look: just a small title and names. Created automatically from your installed apps on first run; fully editable.
-- **Time limits** — daily minutes per app (e.g. X 10 min, Reddit 5 min, YouTube 10 min). A quiet pill warns you at 5 min and counts down the last minute; at zero the app is closed and you're sent home.
-  - Stricter limits apply now; looser limits (or removing one) only start **tomorrow**.
-  - Need it for study or work? **One** 15-minute extension per app per day, after a 10-second pause.
-- **Who's waiting** — swipe down to see which apps have notifications: name, count, time. Never the content. Tap to open, hold to clear.
-- **All apps** — swipe up for an A–Z list that curves away like a drum, with search.
-- **Focus** — the moon button toggles Do Not Disturb.
+- **Side panels** — swipe right or left on home: a panel slides over ~80% of the screen (home stays visible in the rest) with your important apps — names plus their logos in monochrome. Width adapts to the screen.
+- **Dock** — a search circle plus a pill of small monochrome icons: Focus, extra quick apps (scroll sideways), and Settings.
+- **All apps** — swipe up for an A–Z list that curves away like a drum. Swipe sideways to walk through groups (Messaging, Phone, AI, Social, Watch & Listen, Finance, Shopping & Food, Travel, Work, Tools, Utilities, Games, Other) — it loops. Scrolling shrinks the search bar back into the dock.
+- **Time limits** — daily minutes per app (e.g. X 10 min, Reddit 5 min, YouTube 10 min). A quiet pill warns at 5 min and counts down the last minute; at zero the app closes and you're sent home.
+  - Stricter limits apply now; looser ones (or removing one) only start **tomorrow**.
+  - Studying? **One** 15-minute extension per app per day, after a 10-second pause.
+- **Who's waiting** — swipe down for which apps have notifications: name, count, time. Never the content.
+- **Setup & Settings** — a step-by-step setup on first launch; everything is editable later from ⚙ in the dock.
 
 ## Gestures
 
 | Gesture | Action |
 |---|---|
-| Swipe left / right | Next / previous group (loops back to home) |
-| Swipe up | All apps |
+| Swipe right / left on home | Left / right panel of important apps |
+| Swipe up | All apps (swipe sideways there for groups) |
 | Swipe down | Who's waiting (notification names) |
 | Long-press an app | Keep on home, time limit, rename, hide, info, uninstall |
+| Long-press the dock | Edit dock |
+| Long-press a panel / group title | Edit it |
 | Long-press empty home | Settings |
-| Long-press empty group page | Edit that group |
 
 ## Install
 
-1. Download `NoLauncher-v*.apk` from [Releases](../../releases/latest) on your phone and install it.
+1. Download `NoLauncher-v*.apk` from [Releases](../../releases/latest) and install it.
+   - **Play Protect "App blocked"?** Some regions block APKs that request Accessibility/notification access when installed from a browser. Install from a computer instead: enable USB debugging, then `adb install -r NoLauncher-v*.apk`.
 2. Open **NoLauncher → Get started**, choose it as your default **Home app**, pick your essentials.
-3. Turn on the permissions (each is one-time):
-   - **Time limits:** Settings → Time limits → *Turn on enforcement* → Accessibility → *NoLauncher time limits* → On.
-   - **Who's waiting:** swipe down → *Allow access*.
-   - **Focus:** tap the moon → allow Do Not Disturb access.
+3. The setup walks you through permissions (later: ⚙ → Permissions).
 
 > **Android 13+:** for apps installed from an APK, the Accessibility and Notification access switches may be greyed out ("Restricted setting"). Open *Settings → Apps → NoLauncher → ⋮ → Allow restricted settings*, then try again.
 

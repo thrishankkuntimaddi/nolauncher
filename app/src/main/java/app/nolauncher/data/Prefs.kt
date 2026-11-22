@@ -27,9 +27,41 @@ class Prefs(context: Context) {
     private val _groups = MutableStateFlow(AppGroup.listFromJson(sp.getString(K_GROUPS, null)))
     val groups: StateFlow<List<AppGroup>> = _groups.asStateFlow()
 
-    var groupsSeeded: Boolean
-        get() = sp.getBoolean(K_GROUPS_SEEDED, false)
-        set(value) = sp.edit { putBoolean(K_GROUPS_SEEDED, value) }
+    /** Bumped when the automatic layout (groups, dock, panels) is improved, so it re-runs once. */
+    var layoutVersion: Int
+        get() = sp.getInt(K_LAYOUT_VERSION, if (sp.getBoolean(K_GROUPS_SEEDED, false)) 1 else 0)
+        set(value) = sp.edit { putInt(K_LAYOUT_VERSION, value) }
+
+    /** Small monochrome icons in the bottom pill. */
+    val dock = KeyList(K_DOCK, MAX_DOCK)
+    /** Panel that slides in from the left (swipe right on home). */
+    val leftPanel = KeyList(K_LEFT, MAX_PANEL)
+    /** Panel that slides in from the right (swipe left on home). */
+    val rightPanel = KeyList(K_RIGHT, MAX_PANEL)
+
+    inner class KeyList(private val prefKey: String, val max: Int) {
+        private val _flow = MutableStateFlow(
+            sp.getString(prefKey, "").orEmpty().split('\n').filter { it.isNotBlank() }
+        )
+        val flow: StateFlow<List<String>> = _flow.asStateFlow()
+
+        fun set(keys: List<String>) {
+            val next = keys.distinct().take(max)
+            _flow.value = next
+            sp.edit { putString(prefKey, next.joinToString("\n")) }
+        }
+
+        /** Returns false if the list is full. */
+        fun toggle(key: String): Boolean {
+            val cur = _flow.value
+            if (key in cur) { set(cur - key); return true }
+            if (cur.size >= max) return false
+            set(cur + key)
+            return true
+        }
+
+        fun remove(key: String) { if (key in _flow.value) set(_flow.value - key) }
+    }
 
     fun setGroups(groups: List<AppGroup>) {
         _groups.value = groups
@@ -72,7 +104,10 @@ class Prefs(context: Context) {
         val next = if (hide) _hidden.value + key else _hidden.value - key
         _hidden.value = next
         sp.edit { putStringSet(K_HIDDEN, next) }
-        if (hide) setPinned(key, false)
+        if (hide) {
+            setPinned(key, false)
+            dock.remove(key); leftPanel.remove(key); rightPanel.remove(key)
+        }
     }
 
     fun rename(key: String, name: String?) {
@@ -88,5 +123,11 @@ class Prefs(context: Context) {
         private const val K_ONBOARDED = "onboarded"
         private const val K_GROUPS = "groups"
         private const val K_GROUPS_SEEDED = "groups_seeded"
+        private const val K_LAYOUT_VERSION = "layout_version"
+        private const val K_DOCK = "dock"
+        private const val K_LEFT = "panel_left"
+        private const val K_RIGHT = "panel_right"
+        const val MAX_DOCK = 12
+        const val MAX_PANEL = 10
     }
 }

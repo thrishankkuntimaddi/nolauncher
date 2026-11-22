@@ -18,6 +18,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -27,15 +30,22 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import app.nolauncher.data.AppEntry
 import app.nolauncher.data.FocusMode
 import app.nolauncher.data.GroupSeeder
@@ -44,26 +54,42 @@ import app.nolauncher.data.NotifApp
 import app.nolauncher.data.NotifListener
 import app.nolauncher.data.Prefs
 import app.nolauncher.service.LimitService
+import app.nolauncher.ui.AppChecklist
 import app.nolauncher.ui.AppMenu
 import app.nolauncher.ui.BlockScreen
+import app.nolauncher.ui.BottomBar
 import app.nolauncher.ui.DrawerScreen
 import app.nolauncher.ui.GroupEditScreen
 import app.nolauncher.ui.GroupsScreen
 import app.nolauncher.ui.HiddenAppsScreen
-import app.nolauncher.ui.HomePager
+import app.nolauncher.ui.HomeScreen
 import app.nolauncher.ui.LimitPicker
 import app.nolauncher.ui.LimitsScreen
+import app.nolauncher.ui.LocalIcons
 import app.nolauncher.ui.NotificationsScreen
 import app.nolauncher.ui.OnboardingScreen
 import app.nolauncher.ui.Palette
-import app.nolauncher.ui.PickHomeScreen
+import app.nolauncher.ui.PermissionItem
+import app.nolauncher.ui.PermissionsScreen
 import app.nolauncher.ui.RenameDialog
+import app.nolauncher.ui.SettingItem
 import app.nolauncher.ui.SettingsScreen
+import app.nolauncher.ui.SidePanels
+import app.nolauncher.ui.filterApps
+import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.sign
 
 private enum class Screen {
-    Onboarding, PickHome, Home, Drawer, Notifications, Blocked,
-    Settings, Groups, GroupEdit, Limits, Hidden,
+    Onboarding, Setup, Home, Drawer, Notifications, Blocked,
+    Settings, Pick, Groups, GroupEdit, Limits, Permissions, Hidden,
 }
+
+/** The ordered app lists you can customise. */
+private enum class ListKind { Home, Dock, Left, Right }
+
+private const val SETUP_STEPS = 6
+private const val LAYOUT_VERSION = 2
 
 class MainActivity : ComponentActivity() {
 
@@ -72,17 +98,24 @@ class MainActivity : ComponentActivity() {
     private lateinit var focus: FocusMode
 
     private var screen by mutableStateOf(Screen.Home)
-    private var searchOnOpen by mutableStateOf(false)
+    private var setupStep by mutableIntStateOf(0)
+    private var pickKind by mutableStateOf(ListKind.Home)
+    private var pickReturn by mutableStateOf(Screen.Settings)
+
+    private var query by mutableStateOf("")
+    private var drawerCollapsed by mutableStateOf(false)
+    private var focusSignal by mutableIntStateOf(0)
+    private var homeReset by mutableIntStateOf(0)
+
     private var focusOn by mutableStateOf(false)
     private var focusAccess by mutableStateOf(false)
     private var isDefault by mutableStateOf(true)
     private var notifAccess by mutableStateOf(false)
     private var limitsEnforced by mutableStateOf(false)
-    private var homeReset by mutableIntStateOf(0)
+
     private var blockedPkg by mutableStateOf<String?>(null)
     private var editingGroup by mutableStateOf<String?>(null)
     private var limitFor by mutableStateOf<AppEntry?>(null)
-    private var limitReturn by mutableStateOf<AppEntry?>(null)
 
     private val roleRequest =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { isDefault = checkDefault() }
@@ -96,34 +129,37 @@ class MainActivity : ComponentActivity() {
         focus = FocusMode(this)
         screen = if (app.prefs.onboarded) Screen.Home else Screen.Onboarding
         handleBlocked(intent)
-        setContent { Root() }
+        setContent { CompositionLocalProvider(LocalIcons provides app.icons) { Root() } }
     }
 
     override fun onResume() {
         super.onResume()
+        refreshPermissions()
+        if (notifAccess) NotifListener.rebind(this)
+        limits.rollover()
+    }
+
+    private fun refreshPermissions() {
         focusOn = focus.isOn
         focusAccess = focus.hasAccess
         isDefault = checkDefault()
         notifAccess = NotifListener.hasAccess(this)
-        if (notifAccess) NotifListener.rebind(this)
         limitsEnforced = LimitService.isEnabled(this)
-        limits.rollover()
     }
 
     override fun onStop() {
         super.onStop()
         // Coming back to the phone should always land on the calm home screen.
         if (screen == Screen.Drawer || screen == Screen.Notifications) screen = Screen.Home
+        homeReset++
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (handleBlocked(intent)) return
         // Home button pressed while we're already in front.
-        if (screen != Screen.Onboarding && screen != Screen.PickHome) {
-            screen = Screen.Home
-            homeReset++
-        }
+        if (screen != Screen.Onboarding && screen != Screen.Setup) screen = Screen.Home
+        homeReset++
     }
 
     private fun handleBlocked(intent: Intent?): Boolean {
@@ -140,6 +176,9 @@ class MainActivity : ComponentActivity() {
         val prefs = app.prefs
         val rawApps by app.repo.apps.collectAsState()
         val pinned by prefs.pinned.collectAsState()
+        val dockKeys by prefs.dock.flow.collectAsState()
+        val leftKeys by prefs.leftPanel.flow.collectAsState()
+        val rightKeys by prefs.rightPanel.flow.collectAsState()
         val hidden by prefs.hidden.collectAsState()
         val names by prefs.renames.collectAsState()
         val groups by prefs.groups.collectAsState()
@@ -154,11 +193,13 @@ class MainActivity : ComponentActivity() {
         }
         val visible = remember(all, hidden) { all.filter { it.key !in hidden } }
         val byKey = remember(all) { all.associateBy { it.key } }
-        val homeApps = remember(byKey, pinned) { pinned.mapNotNull { byKey[it] } }
+        fun resolve(keys: List<String>) = keys.mapNotNull { byKey[it] }.filter { it.key !in hidden }
+        val homeApps = remember(byKey, pinned, hidden) { resolve(pinned) }
+        val dockApps = remember(byKey, dockKeys, hidden) { resolve(dockKeys) }
+        val leftApps = remember(byKey, leftKeys, hidden) { resolve(leftKeys) }
+        val rightApps = remember(byKey, rightKeys, hidden) { resolve(rightKeys) }
         val groupPages = remember(groups, byKey, hidden) {
-            groups.map { g ->
-                g to g.keys.filter { it !in hidden }.mapNotNull { byKey[it] }.sortedBy { it.label.lowercase() }
-            }
+            groups.map { g -> g to resolve(g.keys).sortedBy { it.label.lowercase() } }
         }
         val originalLabels = remember(rawApps) { rawApps.associate { it.key to it.label } }
         val notifRows = remember(notifs, all) {
@@ -166,27 +207,56 @@ class MainActivity : ComponentActivity() {
             notifs.map { n -> (byPkg[n.packageName to n.user]?.label ?: labelFor(n.packageName)) to n }
         }
 
-        // First run (or upgrade): sort apps into groups and suggest limits for social apps.
+        // Automatic layout on first run, and once more whenever it's improved.
         LaunchedEffect(rawApps) {
-            if (!prefs.groupsSeeded && rawApps.isNotEmpty()) {
-                val (seedGroups, seedLimits) = GroupSeeder.seed(this@MainActivity, rawApps)
-                if (prefs.groups.value.isEmpty()) prefs.setGroups(seedGroups)
-                limits.seed(seedLimits)
-                prefs.groupsSeeded = true
+            if (prefs.layoutVersion < LAYOUT_VERSION && rawApps.isNotEmpty()) {
+                val ctx = this@MainActivity
+                prefs.setGroups(GroupSeeder.groups(ctx, rawApps))
+                limits.seed(GroupSeeder.limits(ctx, rawApps))
+                if (prefs.dock.flow.value.isEmpty()) prefs.dock.set(GroupSeeder.dock(rawApps))
+                if (prefs.leftPanel.flow.value.isEmpty()) prefs.leftPanel.set(GroupSeeder.leftPanel(rawApps))
+                if (prefs.rightPanel.flow.value.isEmpty()) prefs.rightPanel.set(GroupSeeder.rightPanel(rawApps))
+                prefs.layoutVersion = LAYOUT_VERSION
             }
         }
 
         var menuFor by remember { mutableStateOf<AppEntry?>(null) }
         var renaming by remember { mutableStateOf<AppEntry?>(null) }
 
-        // Back never leaves the launcher; it just steps toward home.
-        BackHandler {
-            screen = when (screen) {
-                Screen.Hidden, Screen.Groups, Screen.Limits -> Screen.Settings
-                Screen.GroupEdit -> Screen.Groups
-                Screen.PickHome -> if (prefs.onboarded) Screen.Settings else Screen.Onboarding
-                Screen.Onboarding -> Screen.Onboarding
-                else -> Screen.Home
+        // ── Side panels: progress -1 (right panel) … 0 (closed) … +1 (left panel)
+        val scope = rememberCoroutineScope()
+        val panel = remember { Animatable(0f) }
+        val panelDrag: (Float) -> Unit = { f ->
+            scope.launch {
+                val v = panel.value
+                val nv = v + f
+                panel.snapTo(
+                    when {
+                        v > 0f -> nv.coerceIn(0f, 1f)
+                        v < 0f -> nv.coerceIn(-1f, 0f)
+                        else -> nv.coerceIn(-1f, 1f)
+                    }
+                )
+            }
+        }
+        val panelSettle: () -> Unit = {
+            scope.launch {
+                val v = panel.value
+                panel.animateTo(if (abs(v) > 0.3f) sign(v) else 0f, spring(1f, Spring.StiffnessMediumLow))
+            }
+        }
+        val panelClose: () -> Unit = { scope.launch { panel.animateTo(0f, spring(1f, Spring.StiffnessMediumLow)) } }
+        LaunchedEffect(homeReset) { panel.snapTo(0f) }
+
+        // ── Search state is shared by the bar and the drawer.
+        val keyboard = LocalSoftwareKeyboardController.current
+        val focusManager = LocalFocusManager.current
+        LaunchedEffect(screen) {
+            if (screen != Screen.Drawer) {
+                query = ""
+                drawerCollapsed = false
+                keyboard?.hide()
+                focusManager.clearFocus()
             }
         }
 
@@ -199,6 +269,73 @@ class MainActivity : ComponentActivity() {
             }
         }
         val showMenu: (AppEntry) -> Unit = { menuFor = it }
+        val openSettings: () -> Unit = { panelClose(); screen = Screen.Settings }
+        fun editList(kind: ListKind, returnTo: Screen) {
+            pickKind = kind; pickReturn = returnTo; screen = Screen.Pick
+        }
+
+        // Back never leaves the launcher; it just steps toward home.
+        BackHandler {
+            screen = when (screen) {
+                Screen.Hidden, Screen.Groups, Screen.Limits, Screen.Permissions -> Screen.Settings
+                Screen.Pick -> pickReturn
+                Screen.GroupEdit -> Screen.Groups
+                Screen.Setup -> when {
+                    setupStep > 0 -> { setupStep--; Screen.Setup }
+                    prefs.onboarded -> Screen.Settings
+                    else -> Screen.Onboarding
+                }
+                Screen.Onboarding -> Screen.Onboarding
+                else -> Screen.Home
+            }
+        }
+        BackHandler(enabled = panel.value != 0f) { panelClose() }
+
+        // ── Shared lists for the editors.
+        fun listFor(kind: ListKind) = when (kind) {
+            ListKind.Home -> pinned
+            ListKind.Dock -> dockKeys
+            ListKind.Left -> leftKeys
+            ListKind.Right -> rightKeys
+        }
+        fun toggle(kind: ListKind, a: AppEntry) {
+            val ok = when (kind) {
+                ListKind.Home -> prefs.setPinned(a.key, a.key !in pinned)
+                ListKind.Dock -> prefs.dock.toggle(a.key)
+                ListKind.Left -> prefs.leftPanel.toggle(a.key)
+                ListKind.Right -> prefs.rightPanel.toggle(a.key)
+            }
+            if (!ok) toast("That's the maximum")
+        }
+        fun maxFor(kind: ListKind) = when (kind) {
+            ListKind.Home -> Prefs.MAX_PINNED
+            ListKind.Dock -> Prefs.MAX_DOCK
+            else -> Prefs.MAX_PANEL
+        }
+        val listText = mapOf(
+            ListKind.Home to ("Home" to "Up to 7 names on your home screen."),
+            ListKind.Dock to ("Dock" to "Small icons beside search. Scroll the dock sideways to see them all."),
+            ListKind.Left to ("Swipe right" to "These slide in from the left when you swipe right on home."),
+            ListKind.Right to ("Swipe left" to "These slide in from the right when you swipe left on home."),
+        )
+        @Composable
+        fun ListEditor(kind: ListKind, step: String?, cta: String, onDone: () -> Unit) {
+            val (title, sub) = listText.getValue(kind)
+            AppChecklist(
+                title = title, subtitle = sub, apps = visible, selected = listFor(kind), max = maxFor(kind),
+                showIcons = kind != ListKind.Home, step = step, cta = cta,
+                onToggle = { toggle(kind, it) }, onDone = onDone,
+            )
+        }
+
+        val permissionItems = listOf(
+            PermissionItem("Default home", "So the home button always brings you here", isDefault, ::requestDefaultHome),
+            PermissionItem("Time limits", "Warns you and closes apps when their time is up", limitsEnforced, ::requestLimitEnforcement),
+            PermissionItem("Notification names", "Swipe down to see who's waiting — names only", notifAccess, ::requestNotifAccess),
+            PermissionItem("Focus", "The moon in the dock turns on Do Not Disturb", focusAccess) {
+                safeStart(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+            },
+        )
 
         Box(Modifier.fillMaxSize().background(Palette.Bg)) {
             AnimatedContent(
@@ -219,47 +356,57 @@ class MainActivity : ComponentActivity() {
                 when (s) {
                     Screen.Onboarding -> OnboardingScreen(onStart = {
                         if (!checkDefault()) requestDefaultHome()
-                        screen = Screen.PickHome
+                        setupStep = 0
+                        screen = Screen.Setup
                     })
 
-                    Screen.PickHome -> PickHomeScreen(
-                        apps = visible,
-                        pinned = pinned,
-                        onToggle = { a ->
-                            val isPinned = a.key in pinned
-                            if (!prefs.setPinned(a.key, !isPinned)) toast("Up to ${Prefs.MAX_PINNED} apps")
-                        },
-                        onDone = {
-                            val wasOnboarded = prefs.onboarded
-                            prefs.onboarded = true
-                            screen = if (wasOnboarded) Screen.Settings else Screen.Home
-                        },
-                    )
+                    Screen.Setup -> {
+                        val step = "Step ${setupStep + 1} of $SETUP_STEPS"
+                        val next: () -> Unit = {
+                            if (setupStep < SETUP_STEPS - 1) setupStep++ else {
+                                prefs.onboarded = true
+                                screen = Screen.Home
+                            }
+                        }
+                        when (setupStep) {
+                            0 -> ListEditor(ListKind.Home, step, "Next", next)
+                            1 -> ListEditor(ListKind.Dock, step, "Next", next)
+                            2 -> ListEditor(ListKind.Left, step, "Next", next)
+                            3 -> ListEditor(ListKind.Right, step, "Next", next)
+                            4 -> LimitsScreen(
+                                apps = visible.distinctBy { it.packageName }.filterNot { isProtected(it.packageName) },
+                                limits = limitMap, pending = pendingMap, usage = usage, enforced = limitsEnforced,
+                                onEnable = ::requestLimitEnforcement, onPick = { limitFor = it },
+                                step = step, cta = "Next", onCta = next,
+                            )
+                            else -> PermissionsScreen(permissionItems, step, "Finish", ::openOwnAppInfo, next)
+                        }
+                    }
 
-                    Screen.Home -> HomePager(
-                        home = homeApps,
-                        groups = groupPages,
-                        focusOn = focusOn,
-                        resetSignal = homeReset,
+                    Screen.Home -> HomeScreen(
+                        apps = homeApps,
                         onOpen = open,
                         onMenu = showMenu,
-                        onSearch = { searchOnOpen = true; screen = Screen.Drawer },
-                        onAllApps = { searchOnOpen = false; screen = Screen.Drawer },
+                        onAllApps = { drawerCollapsed = false; screen = Screen.Drawer },
                         onNotifications = { screen = Screen.Notifications },
-                        onFocus = ::toggleFocus,
-                        onSettings = { screen = Screen.Settings },
-                        onEditGroup = { g -> editingGroup = g.id; screen = Screen.GroupEdit },
+                        onSettings = openSettings,
+                        onPanelDrag = panelDrag,
+                        onPanelDragEnd = panelSettle,
                     )
 
                     Screen.Drawer -> DrawerScreen(
                         apps = visible,
-                        autoFocusSearch = searchOnOpen,
-                        focusOn = focusOn,
+                        groups = groupPages,
+                        query = query,
                         onOpen = open,
                         onMenu = showMenu,
                         onClose = { screen = Screen.Home },
-                        onFocus = ::toggleFocus,
-                        onSettings = { screen = Screen.Settings },
+                        onScrolled = {
+                            keyboard?.hide()
+                            focusManager.clearFocus()
+                            if (query.isEmpty()) drawerCollapsed = true
+                        },
+                        onEditGroup = { g -> editingGroup = g.id; screen = Screen.GroupEdit },
                         onWebSearch = ::webSearch,
                     )
 
@@ -292,24 +439,34 @@ class MainActivity : ComponentActivity() {
                     }
 
                     Screen.Settings -> SettingsScreen(
-                        pinnedCount = homeApps.size,
-                        groupCount = groups.size,
-                        limitCount = limitMap.size,
-                        limitsEnforced = limitsEnforced,
-                        hiddenCount = hidden.size,
-                        focusAccess = focusAccess,
-                        focusOn = focusOn,
-                        notifAccess = notifAccess,
-                        isDefault = isDefault,
-                        onHomeApps = { screen = Screen.PickHome },
-                        onGroups = { screen = Screen.Groups },
-                        onLimits = { screen = Screen.Limits },
-                        onHiddenApps = { screen = Screen.Hidden },
-                        onFocus = ::toggleFocus,
-                        onNotifAccess = ::requestNotifAccess,
-                        onMakeDefault = ::requestDefaultHome,
-                        onSystemSettings = { safeStart(Intent(Settings.ACTION_SETTINGS)) },
+                        listOf(
+                            SettingItem("Home apps", "${homeApps.size} of ${Prefs.MAX_PINNED}") { editList(ListKind.Home, Screen.Settings) },
+                            SettingItem("Dock", "${dockApps.size} quick apps beside search") { editList(ListKind.Dock, Screen.Settings) },
+                            SettingItem("Swipe right panel", "${leftApps.size} apps") { editList(ListKind.Left, Screen.Settings) },
+                            SettingItem("Swipe left panel", "${rightApps.size} apps") { editList(ListKind.Right, Screen.Settings) },
+                            SettingItem("Groups", "${groups.size} groups in All apps") { screen = Screen.Groups },
+                            SettingItem(
+                                "Time limits",
+                                when {
+                                    limitMap.isEmpty() -> "None"
+                                    !limitsEnforced -> "${limitMap.size} apps · not enforced yet"
+                                    else -> "${limitMap.size} apps"
+                                },
+                            ) { screen = Screen.Limits },
+                            SettingItem("Permissions", "${permissionItems.count { it.on }} of ${permissionItems.size} on") {
+                                screen = Screen.Permissions
+                            },
+                            SettingItem("Hidden apps", if (hidden.isEmpty()) "None" else "${hidden.size} hidden") { screen = Screen.Hidden },
+                            SettingItem("Run setup again", "Walk through every step") { setupStep = 0; screen = Screen.Setup },
+                            SettingItem("Phone settings", null) { safeStart(Intent(Settings.ACTION_SETTINGS)) },
+                        )
                     )
+
+                    Screen.Pick -> ListEditor(pickKind, null, "Done") { screen = pickReturn }
+
+                    Screen.Permissions -> PermissionsScreen(permissionItems, null, "Done", ::openOwnAppInfo) {
+                        screen = Screen.Settings
+                    }
 
                     Screen.Groups -> GroupsScreen(
                         groups = groups,
@@ -319,6 +476,10 @@ class MainActivity : ComponentActivity() {
                             val g = prefs.addGroup("New group")
                             editingGroup = g.id
                             screen = Screen.GroupEdit
+                        },
+                        onResort = {
+                            prefs.setGroups(GroupSeeder.groups(this@MainActivity, rawApps))
+                            toast("Sorted")
                         },
                     )
 
@@ -359,6 +520,55 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // ── The bar: a dock on home, a search field in All apps (it shrinks back to the dock as you scroll).
+            AnimatedVisibility(
+                visible = screen == Screen.Home || screen == Screen.Drawer,
+                enter = fadeIn(tween(200)),
+                exit = fadeOut(tween(120)),
+                modifier = Modifier.align(Alignment.BottomCenter),
+            ) {
+                BottomBar(
+                    expanded = screen == Screen.Drawer && !drawerCollapsed,
+                    query = query,
+                    onQuery = { query = it },
+                    focusSignal = focusSignal,
+                    onGo = {
+                        filterApps(visible, query).firstOrNull()?.let(open)
+                            ?: if (query.isNotBlank()) webSearch(query) else Unit
+                    },
+                    onSearchTap = {
+                        panelClose()
+                        drawerCollapsed = false
+                        screen = Screen.Drawer
+                        focusSignal++
+                    },
+                    dock = dockApps,
+                    focusOn = focusOn,
+                    onFocus = ::toggleFocus,
+                    onOpen = open,
+                    onEditDock = { editList(ListKind.Dock, screen) },
+                    onSettings = openSettings,
+                    modifier = Modifier.navigationBarsPadding().imePadding(),
+                )
+            }
+
+            if (screen == Screen.Home) {
+                SidePanels(
+                    progress = panel.value,
+                    left = leftApps,
+                    right = rightApps,
+                    onDrag = panelDrag,
+                    onDragEnd = panelSettle,
+                    onClose = panelClose,
+                    onOpen = open,
+                    onMenu = showMenu,
+                    onEdit = { leftSide ->
+                        panelClose()
+                        editList(if (leftSide) ListKind.Left else ListKind.Right, Screen.Home)
+                    },
+                )
+            }
+
             AnimatedVisibility(menuFor != null, enter = fadeIn(tween(160)), exit = fadeOut(tween(120))) {
                 // Keep the last value around during the exit animation.
                 val a = remember { mutableStateOf(menuFor) }.apply { if (menuFor != null) value = menuFor }.value
@@ -391,7 +601,7 @@ class MainActivity : ComponentActivity() {
                     onPick = { m ->
                         when (limits.setLimit(a.packageName, m)) {
                             Limits.Change.Tomorrow -> toast("Starts tomorrow")
-                            Limits.Change.Applied -> if (!limitsEnforced) toast("Turn on enforcement in Settings → Time limits")
+                            Limits.Change.Applied -> if (!limitsEnforced) toast("Turn on Time limits in Settings → Permissions")
                             Limits.Change.NoChange -> Unit
                         }
                         limitFor = null
@@ -437,7 +647,7 @@ class MainActivity : ComponentActivity() {
 
     private fun requestNotifAccess() {
         if (NotifListener.hasAccess(this)) {
-            toast("Already allowed"); return
+            toast("Already on"); return
         }
         val detail = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
@@ -449,6 +659,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestLimitEnforcement() {
+        if (LimitService.isEnabled(this)) {
+            toast("Already on"); return
+        }
         toast("Find “NoLauncher time limits” and turn it on")
         safeStart(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }
@@ -474,6 +687,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestDefaultHome() {
+        if (checkDefault()) {
+            toast("Already your home app"); return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val rm = getSystemService(RoleManager::class.java)
             if (rm.isRoleAvailable(RoleManager.ROLE_HOME) && !rm.isRoleHeld(RoleManager.ROLE_HOME)) {

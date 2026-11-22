@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -35,11 +36,14 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import app.nolauncher.data.AppEntry
 import app.nolauncher.data.AppGroup
-import app.nolauncher.data.Prefs
 
 @Composable
-private fun Header(title: String, subtitle: String? = null) {
+private fun Header(title: String, subtitle: String? = null, step: String? = null) {
     Column(Modifier.padding(start = 28.dp, end = 28.dp, top = 32.dp, bottom = 20.dp)) {
+        if (step != null) {
+            Txt(step, color = Palette.Faint, size = 13.sp)
+            Spacer(Modifier.height(6.dp))
+        }
         Txt(title, size = 34.sp, weight = FontWeight.Bold)
         if (subtitle != null) {
             Spacer(Modifier.height(6.dp))
@@ -58,64 +62,71 @@ private fun SettingRow(title: String, detail: String?, onClick: () -> Unit) {
     }
 }
 
-@Composable
-fun SettingsScreen(
-    pinnedCount: Int,
-    groupCount: Int,
-    limitCount: Int,
-    limitsEnforced: Boolean,
-    hiddenCount: Int,
-    focusAccess: Boolean,
-    focusOn: Boolean,
-    notifAccess: Boolean,
-    isDefault: Boolean,
-    onHomeApps: () -> Unit,
-    onGroups: () -> Unit,
-    onLimits: () -> Unit,
-    onHiddenApps: () -> Unit,
-    onFocus: () -> Unit,
-    onNotifAccess: () -> Unit,
-    onMakeDefault: () -> Unit,
-    onSystemSettings: () -> Unit,
-) {
-    Column(Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState())) {
-        Header("Settings")
-        SettingRow("Home apps", "$pinnedCount of ${Prefs.MAX_PINNED}", onHomeApps)
-        SettingRow("Groups", if (groupCount == 0) "None — swipe left/right does nothing" else "$groupCount groups · swipe left or right", onGroups)
-        SettingRow(
-            "Time limits",
-            when {
-                limitCount == 0 -> "None"
-                !limitsEnforced -> "$limitCount apps · not enforced — tap to turn on"
-                else -> "$limitCount apps"
-            },
-            onLimits,
-        )
-        SettingRow(
-            "Notification names",
-            if (notifAccess) "On — see who's waiting, never the content" else "Tap to allow notification access",
-            onNotifAccess,
-        )
-        SettingRow(
-            "Focus",
-            when {
-                !focusAccess -> "Tap to allow Do Not Disturb access"
-                focusOn -> "On — only priority interruptions"
-                else -> "Off"
-            },
-            onFocus,
-        )
-        SettingRow("Hidden apps", if (hiddenCount == 0) "None" else "$hiddenCount hidden", onHiddenApps)
-        if (!isDefault) SettingRow("Make default home", "So the home button brings you here", onMakeDefault)
-        SettingRow("Phone settings", null, onSystemSettings)
+data class SettingItem(val title: String, val detail: String?, val onClick: () -> Unit)
 
+@Composable
+fun SettingsScreen(items: List<SettingItem>) {
+    Column(Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState())) {
+        Header("Settings", "Everything about NoLauncher lives here.")
+        items.forEach { SettingRow(it.title, it.detail, it.onClick) }
         Spacer(Modifier.height(28.dp))
         Txt(
-            "Swipe left / right — your groups, round in a circle\nSwipe up — all apps\nSwipe down — who's waiting\n" +
-                "Long-press an app — options & time limit\nLong-press empty space — settings / edit group",
+            "Swipe right / left on home — your two panels\nSwipe up — all apps (swipe sideways there for groups)\n" +
+                "Swipe down — who's waiting\nLong-press an app — options & time limit\n" +
+                "Long-press the dock — edit dock · long-press home — settings",
             color = Palette.Faint,
             size = 14.sp,
             modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp),
+        )
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+/** A permission/status row: title, what it does, and whether it's on. */
+data class PermissionItem(val title: String, val what: String, val on: Boolean, val onClick: () -> Unit)
+
+@Composable
+fun PermissionsScreen(
+    items: List<PermissionItem>,
+    step: String?,
+    cta: String,
+    onAppInfo: () -> Unit,
+    onDone: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize().systemBarsPadding()) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 120.dp)) {
+            Header("Permissions", "Each one is optional. Tap to turn on.", step)
+            items.forEach { p ->
+                Row(
+                    Modifier.fillMaxWidth().quietClick(onClick = p.onClick).padding(horizontal = 28.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Txt(p.title, size = 22.sp, weight = FontWeight.SemiBold)
+                        Txt(p.what, color = Palette.Muted, size = 14.sp)
+                    }
+                    Txt(
+                        if (p.on) "On" else "Off", size = 15.sp, weight = FontWeight.SemiBold,
+                        color = if (p.on) Palette.Ink else Palette.Faint,
+                        modifier = Modifier.padding(start = 12.dp),
+                    )
+                }
+            }
+            Txt(
+                "A switch greyed out? Android blocks some settings for apps installed from an APK. " +
+                    "Open App info → ⋮ → Allow restricted settings, then try again.",
+                color = Palette.Faint, size = 13.sp,
+                modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp),
+            )
+            Txt(
+                "App info", color = Palette.Muted, size = 16.sp, weight = FontWeight.SemiBold,
+                modifier = Modifier.quietClick(onClick = onAppInfo).padding(horizontal = 28.dp, vertical = 8.dp),
+            )
+        }
+        PrimaryButton(
+            cta,
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp),
+            onDone,
         )
     }
 }
@@ -126,10 +137,11 @@ fun GroupsScreen(
     onOpen: (AppGroup) -> Unit,
     onMoveUp: (AppGroup) -> Unit,
     onNew: () -> Unit,
+    onResort: () -> Unit,
 ) {
     Box(Modifier.fillMaxSize().systemBarsPadding()) {
         LazyColumn(contentPadding = PaddingValues(bottom = 120.dp)) {
-            item { Header("Groups", "Swipe left or right on home to visit them. Hold a group to move it earlier.") }
+            item { Header("Groups", "Swipe left or right in All apps to visit them. Hold a group to move it earlier.") }
             items(groups, key = { it.id }) { g ->
                 Column(
                     Modifier.fillMaxWidth().quietClick(onLongClick = { onMoveUp(g) }) { onOpen(g) }
@@ -138,6 +150,12 @@ fun GroupsScreen(
                     Txt(g.name, size = 22.sp, weight = FontWeight.SemiBold)
                     Txt("${g.keys.size} apps", color = Palette.Muted, size = 14.sp)
                 }
+            }
+            item {
+                Txt(
+                    "Sort all apps again automatically", color = Palette.Muted, size = 16.sp,
+                    modifier = Modifier.quietClick(onClick = onResort).padding(horizontal = 28.dp, vertical = 24.dp),
+                )
             }
         }
         PrimaryButton(
@@ -206,11 +224,22 @@ fun LimitsScreen(
     enforced: Boolean,
     onEnable: () -> Unit,
     onPick: (AppEntry) -> Unit,
+    step: String? = null,
+    cta: String? = null,
+    onCta: () -> Unit = {},
 ) {
+  Box(Modifier.fillMaxSize()) {
     val limited = apps.filter { it.packageName in limits }
     val rest = apps.filter { it.packageName !in limits }
-    LazyColumn(Modifier.fillMaxSize().systemBarsPadding(), contentPadding = PaddingValues(bottom = 40.dp)) {
-        item { Header("Time limits", "Daily minutes per app. When time's up, the app closes and you come home.") }
+    LazyColumn(Modifier.fillMaxSize().systemBarsPadding(), contentPadding = PaddingValues(bottom = if (cta != null) 120.dp else 40.dp)) {
+        item {
+            Header(
+                "Time limits",
+                "Daily minutes per app. A warning near the end, then the app closes and you come home. " +
+                    "Suggestions are already set for social apps — tap any app to change.",
+                step,
+            )
+        }
         if (!enforced) {
             item {
                 Column(
@@ -251,15 +280,28 @@ fun LimitsScreen(
             )
         }
     }
+    if (cta != null) {
+        PrimaryButton(
+            cta,
+            Modifier.align(Alignment.BottomCenter).systemBarsPadding().fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 20.dp),
+            onCta,
+        )
+    }
+  }
 }
 
 @Composable
-private fun Check(label: String, on: Boolean, number: Int?, onClick: () -> Unit) {
+private fun Check(label: String, on: Boolean, number: Int?, icon: AppEntry? = null, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().quietClick(onClick = onClick).padding(horizontal = 28.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
+        if (icon != null) {
+            AppIcon(icon, 24.dp, alpha = if (on) 1f else 0.5f)
+            Spacer(Modifier.width(14.dp))
+        }
         Txt(
             label, size = 22.sp, weight = FontWeight.SemiBold, maxLines = 1,
             color = if (on) Palette.Ink else Palette.Muted,
@@ -275,28 +317,35 @@ private fun Check(label: String, on: Boolean, number: Int?, onClick: () -> Unit)
     }
 }
 
+/** Choose an ordered set of apps (home, dock, panels). Numbers show the order things will appear in. */
 @Composable
-fun PickHomeScreen(
+fun AppChecklist(
+    title: String,
+    subtitle: String,
     apps: List<AppEntry>,
-    pinned: List<String>,
+    selected: List<String>,
+    max: Int,
+    showIcons: Boolean,
+    step: String?,
+    cta: String,
     onToggle: (AppEntry) -> Unit,
     onDone: () -> Unit,
 ) {
+    // Chosen apps first (in order), then the rest A–Z.
+    val ordered = remember(apps, selected) {
+        val byKey = apps.associateBy { it.key }
+        selected.mapNotNull { byKey[it] } + apps.filter { it.key !in selected }
+    }
     Box(Modifier.fillMaxSize().systemBarsPadding()) {
         LazyColumn(contentPadding = PaddingValues(bottom = 120.dp)) {
-            item {
-                Header(
-                    "Your essentials",
-                    "Choose up to ${Prefs.MAX_PINNED}. Everything else is one swipe away.  ${pinned.size}/${Prefs.MAX_PINNED}",
-                )
-            }
-            items(apps, key = { it.key }) { app ->
-                val idx = pinned.indexOf(app.key)
-                Check(app.label, idx >= 0, idx + 1) { onToggle(app) }
+            item { Header(title, "$subtitle  ${selected.size}/$max", step) }
+            items(ordered, key = { it.key }) { app ->
+                val idx = selected.indexOf(app.key)
+                Check(app.label, idx >= 0, idx + 1, if (showIcons) app else null) { onToggle(app) }
             }
         }
         PrimaryButton(
-            "Done",
+            cta,
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp),
             onDone,
         )

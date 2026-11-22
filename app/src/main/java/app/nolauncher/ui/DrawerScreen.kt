@@ -1,87 +1,105 @@
 package app.nolauncher.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.nolauncher.data.AppEntry
-import kotlinx.coroutines.delay
+import app.nolauncher.data.AppGroup
 
+private const val LOOP = 10_000
+
+/**
+ * All apps. Swipe left/right to walk through your groups (it loops).
+ * Typing in the search bar shows matches across everything.
+ */
 @Composable
 fun DrawerScreen(
     apps: List<AppEntry>,
-    autoFocusSearch: Boolean,
-    focusOn: Boolean,
+    groups: List<Pair<AppGroup, List<AppEntry>>>,
+    query: String,
     onOpen: (AppEntry) -> Unit,
     onMenu: (AppEntry) -> Unit,
     onClose: () -> Unit,
-    onFocus: () -> Unit,
-    onSettings: () -> Unit,
+    onScrolled: () -> Unit,
+    onEditGroup: (AppGroup) -> Unit,
     onWebSearch: (String) -> Unit,
 ) {
-    var query by remember { mutableStateOf("") }
-    val results = remember(apps, query) { filterApps(apps, query) }
-    val listState = rememberLazyListState()
-    val focusRequester = remember { FocusRequester() }
-    val keyboard = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
+    val scrolled by rememberUpdatedState(onScrolled)
+    Box(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(bottom = BAR_SPACE)) {
+        if (query.isNotBlank()) {
+            val results = remember(apps, query) { filterApps(apps, query) }
+            val state = rememberLazyListState()
+            LaunchedEffect(query) { state.scrollToItem(0) }
+            WheelPage(null, results, state, onOpen, onMenu, onClose, {}, scrolled)
+            if (results.isEmpty()) {
+                Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Txt("Nothing called “$query”", color = Palette.Muted, size = 15.sp, align = TextAlign.Center)
+                    Spacer(Modifier.height(18.dp))
+                    AppLabel("Search the web", 22.sp) { onWebSearch(query) }
+                }
+            }
+        } else {
+            val n = 1 + groups.size
+            key(n) {
+                val start = remember { if (n > 1) (LOOP / 2) - (LOOP / 2) % n else 0 }
+                val pager = rememberPagerState(initialPage = start) { if (n > 1) LOOP else 1 }
+                HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
+                    val idx = page % n
+                    val state = rememberLazyListState()
+                    if (idx == 0) {
+                        WheelPage(if (n > 1) "All apps" else null, apps, state, onOpen, onMenu, onClose, {}, scrolled)
+                    } else {
+                        val (g, list) = groups[idx - 1]
+                        WheelPage(g.name, list, state, onOpen, onMenu, onClose, { onEditGroup(g) }, scrolled)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WheelPage(
+    title: String?,
+    apps: List<AppEntry>,
+    state: LazyListState,
+    onOpen: (AppEntry) -> Unit,
+    onMenu: (AppEntry) -> Unit,
+    onClose: () -> Unit,
+    onTitleHold: () -> Unit,
+    onScrolled: () -> Unit,
+) {
     val close by rememberUpdatedState(onClose)
-
-    LaunchedEffect(query) { listState.scrollToItem(0) }
-    LaunchedEffect(Unit) {
-        if (autoFocusSearch) {
-            delay(120)
-            focusRequester.requestFocus()
-            keyboard?.show()
-        }
+    LaunchedEffect(state) {
+        snapshotFlow { state.isScrollInProgress }.collect { if (it) onScrolled() }
     }
-    // Scrolling the list puts the keyboard away.
-    LaunchedEffect(listState) {
-        snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
-            if (scrolling) { keyboard?.hide(); focusManager.clearFocus() }
-        }
-    }
-
     // Pulling down past the top of the list closes the drawer.
     val pullToClose = remember {
         object : NestedScrollConnection {
@@ -97,69 +115,18 @@ fun DrawerScreen(
             }
         }
     }
-
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .imePadding(),
-    ) {
-        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            WheelList(
-                apps = results,
-                state = listState,
-                modifier = Modifier.fillMaxSize().nestedScroll(pullToClose),
-                onOpen = onOpen,
-                onMenu = onMenu,
+    Column(Modifier.fillMaxSize()) {
+        if (title != null) {
+            Txt(
+                title, color = Palette.Muted, size = 14.sp, weight = FontWeight.Medium, align = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().quietClick(onLongClick = onTitleHold) {}.padding(top = 14.dp, bottom = 4.dp),
             )
-            if (results.isEmpty() && query.isNotBlank()) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Txt("Nothing called “$query”", color = Palette.Muted, size = 15.sp, align = TextAlign.Center)
-                    Spacer(Modifier.height(18.dp))
-                    AppLabel("Search the web", 22.sp) { onWebSearch(query) }
-                }
-            }
         }
-
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
-            horizontalArrangement = BarSpacing,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(
-                Modifier
-                    .weight(1f)
-                    .height(52.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Palette.Surface)
-                    .padding(horizontal = 18.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                GlyphIcon(Glyph.Search, Palette.Muted, 18.dp)
-                Spacer(Modifier.width(10.dp))
-                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                    if (query.isEmpty()) Txt("Search apps", color = Palette.Muted, size = 15.sp)
-                    BasicTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        singleLine = true,
-                        textStyle = TextStyle(color = Palette.Ink, fontSize = 15.sp),
-                        cursorBrush = SolidColor(Palette.Ink),
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.None,
-                            autoCorrectEnabled = false,
-                            imeAction = ImeAction.Go,
-                        ),
-                        keyboardActions = KeyboardActions(onGo = {
-                            results.firstOrNull()?.let(onOpen) ?: if (query.isNotBlank()) onWebSearch(query) else Unit
-                        }),
-                        modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
-                    )
-                }
+        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            WheelList(apps, state, Modifier.fillMaxSize().nestedScroll(pullToClose), onOpen, onMenu)
+            if (apps.isEmpty() && title != null) {
+                Txt("Empty. Hold the title to add apps.", color = Palette.Muted, size = 15.sp)
             }
-            RoundButton(Glyph.Moon, active = focusOn, onClick = onFocus)
-            RoundButton(Glyph.Sliders, onClick = onSettings)
         }
     }
 }
