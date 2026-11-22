@@ -62,6 +62,10 @@ fun SettingsScreen(
     onFocus: () -> Unit,
     onMakeDefault: () -> Unit,
     onSystemSettings: () -> Unit,
+    gestures: List<Pair<String, String>>,
+    onGesture: (Int) -> Unit,
+    notifAccess: Boolean,
+    onNotifAccess: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState())) {
         Header("Settings")
@@ -76,12 +80,23 @@ fun SettingsScreen(
             },
             onFocus,
         )
+        SettingRow(
+            "Notification names",
+            if (notifAccess) "Allowed — see who's waiting without the content" else "Tap to allow notification access",
+            onNotifAccess,
+        )
         if (!isDefault) SettingRow("Make default home", "So the home button brings you here", onMakeDefault)
         SettingRow("Phone settings", null, onSystemSettings)
 
-        Spacer(Modifier.height(36.dp))
         Txt(
-            "Swipe up — all apps\nSwipe down — notifications\nLong-press an app — options\nLong-press home — settings",
+            "Gestures", color = Palette.Faint, size = 14.sp,
+            modifier = Modifier.padding(start = 28.dp, top = 28.dp, bottom = 4.dp),
+        )
+        gestures.forEachIndexed { i, (title, action) -> SettingRow(title, action) { onGesture(i) } }
+
+        Spacer(Modifier.height(28.dp))
+        Txt(
+            "Swipe up — all apps\nPull from the very top edge — Android's notification shade\nLong-press an app — options\nLong-press home — settings",
             color = Palette.Faint,
             size = 14.sp,
             modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp),

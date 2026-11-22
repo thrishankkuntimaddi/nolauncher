@@ -1,7 +1,7 @@
 package app.nolauncher.ui
 
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +18,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.nolauncher.data.AppEntry
+import app.nolauncher.data.Gesture
+import kotlin.math.abs
 
 @Composable
 fun HomeScreen(
@@ -27,27 +29,38 @@ fun HomeScreen(
     onMenu: (AppEntry) -> Unit,
     onSearch: () -> Unit,
     onAllApps: () -> Unit,
-    onPullShade: () -> Unit,
     onFocus: () -> Unit,
     onSettings: () -> Unit,
+    onGesture: (Gesture) -> Unit,
 ) {
     Box(
         Modifier
             .fillMaxSize()
             .pointerInput(Unit) {
-                var total = 0f
-                detectVerticalDragGestures(
-                    onDragStart = { total = 0f },
+                var dx = 0f
+                var dy = 0f
+                detectDragGestures(
+                    onDragStart = { dx = 0f; dy = 0f },
                     onDragEnd = {
-                        when {
-                            total < -80.dp.toPx() -> onAllApps()
-                            total > 80.dp.toPx() -> onPullShade()
+                        val t = 72.dp.toPx()
+                        if (abs(dy) >= abs(dx)) {
+                            if (dy < -t) onAllApps() else if (dy > t) onGesture(Gesture.SwipeDown)
+                        } else {
+                            if (dx > t) onGesture(Gesture.SwipeRight) else if (dx < -t) onGesture(Gesture.SwipeLeft)
                         }
                     },
-                    onVerticalDrag = { _, dy -> total += dy },
+                ) { change, drag ->
+                    change.consume()
+                    dx += drag.x
+                    dy += drag.y
+                }
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onDoubleTap = { onGesture(Gesture.DoubleTap) },
+                    onLongPress = { onSettings() },
                 )
             }
-            .pointerInput(Unit) { detectTapGestures(onLongPress = { onSettings() }) }
             .systemBarsPadding(),
     ) {
         Column(

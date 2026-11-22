@@ -24,6 +24,16 @@ class Prefs(context: Context) {
     )
     val renames: StateFlow<Map<String, String>> = _renames.asStateFlow()
 
+    private val _gestures = MutableStateFlow(
+        Gesture.entries.associateWith { sp.getString(it.prefKey, it.default) ?: it.default }
+    )
+    val gestures: StateFlow<Map<Gesture, String>> = _gestures.asStateFlow()
+
+    fun setGesture(gesture: Gesture, action: String) {
+        sp.edit { putString(gesture.prefKey, action) }
+        _gestures.value = _gestures.value + (gesture to action)
+    }
+
     var onboarded: Boolean
         get() = sp.getBoolean(K_ONBOARDED, false)
         set(value) = sp.edit { putBoolean(K_ONBOARDED, value) }

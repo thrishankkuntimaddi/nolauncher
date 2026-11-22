@@ -22,7 +22,10 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -36,18 +39,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import app.nolauncher.data.AppEntry
 import app.nolauncher.data.FocusMode
+import app.nolauncher.data.Gesture
+import app.nolauncher.data.GestureAction
+import app.nolauncher.data.NotifApp
+import app.nolauncher.data.NotifListener
 import app.nolauncher.data.Prefs
 import app.nolauncher.ui.AppMenu
 import app.nolauncher.ui.DrawerScreen
+import app.nolauncher.ui.GesturePickerScreen
 import app.nolauncher.ui.HiddenAppsScreen
 import app.nolauncher.ui.HomeScreen
+import app.nolauncher.ui.NotificationsScreen
 import app.nolauncher.ui.OnboardingScreen
 import app.nolauncher.ui.Palette
 import app.nolauncher.ui.PickHomeScreen
 import app.nolauncher.ui.RenameDialog
 import app.nolauncher.ui.SettingsScreen
 
-private enum class Screen { Onboarding, PickHome, Home, Drawer, Settings, Hidden }
+private enum class Screen { Onboarding, PickHome, Home, Drawer, Settings, Hidden, Notifications, GesturePicker }
 
 class MainActivity : ComponentActivity() {
 
@@ -59,6 +68,10 @@ class MainActivity : ComponentActivity() {
     private var focusOn by mutableStateOf(false)
     private var focusAccess by mutableStateOf(false)
     private var isDefault by mutableStateOf(true)
+    private var notifAccess by mutableStateOf(false)
+    private var editingGesture by mutableStateOf(Gesture.SwipeRight)
+    /** Where the gesture picker returns to: Home on first-use, Settings otherwise. */
+    private var pickerReturn by mutableStateOf(Screen.Settings)
 
     private val roleRequest =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { isDefault = checkDefault() }
@@ -79,12 +92,14 @@ class MainActivity : ComponentActivity() {
         focusOn = focus.isOn
         focusAccess = focus.hasAccess
         isDefault = checkDefault()
+        notifAccess = NotifListener.hasAccess(this)
+        if (notifAccess) NotifListener.rebind(this)
     }
 
     override fun onStop() {
         super.onStop()
         // Coming back to the phone should always land on the calm home screen.
-        if (screen == Screen.Drawer) screen = Screen.Home
+        if (screen == Screen.Drawer || screen == Screen.Notifications) screen = Screen.Home
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -100,6 +115,8 @@ class MainActivity : ComponentActivity() {
         val pinned by prefs.pinned.collectAsState()
         val hidden by prefs.hidden.collectAsState()
         val names by prefs.renames.collectAsState()
+        val gestures by prefs.gestures.collectAsState()
+        val notifs by NotifListener.apps.collectAsState()
 
         val all = remember(rawApps, names) {
             rawApps.map { a -> names[a.key]?.let { a.copy(label = it) } ?: a }
@@ -112,6 +129,11 @@ class MainActivity : ComponentActivity() {
         }
         val originalLabels = remember(rawApps) { rawApps.associate { it.key to it.label } }
 
+        val notifRows = remember(notifs, all) {
+            val byPkg = all.associateBy { it.packageName to it.user }
+            notifs.map { n -> (byPkg[n.packageName to n.user]?.label ?: labelFor(n.packageName)) to n }
+        }
+
         var menuFor by remember { mutableStateOf<AppEntry?>(null) }
         var renaming by remember { mutableStateOf<AppEntry?>(null) }
 
@@ -119,6 +141,7 @@ class MainActivity : ComponentActivity() {
         BackHandler {
             screen = when (screen) {
                 Screen.Hidden -> Screen.Settings
+                Screen.GesturePicker -> pickerReturn
                 Screen.PickHome -> if (prefs.onboarded) Screen.Settings else Screen.Onboarding
                 else -> if (screen == Screen.Onboarding) Screen.Onboarding else Screen.Home
             }
@@ -129,11 +152,40 @@ class MainActivity : ComponentActivity() {
         }
         val showMenu: (AppEntry) -> Unit = { menuFor = it }
 
+        val runGesture: (Gesture) -> Unit = { g ->
+            val action = gestures[g] ?: g.default
+            when (action) {
+                GestureAction.UNSET -> {
+                    editingGesture = g; pickerReturn = Screen.Home; screen = Screen.GesturePicker
+                }
+                GestureAction.NONE -> Unit
+                GestureAction.NOTIFICATIONS -> screen = Screen.Notifications
+                GestureAction.SEARCH -> { searchOnOpen = true; screen = Screen.Drawer }
+                GestureAction.ALL_APPS -> { searchOnOpen = false; screen = Screen.Drawer }
+                GestureAction.SHADE -> expandNotificationShade()
+                else -> {
+                    val target = GestureAction.appKey(action)?.let { k -> all.firstOrNull { it.key == k } }
+                    if (target != null) open(target) else toast("That app is gone — pick another in Settings")
+                }
+            }
+        }
+
         Box(Modifier.fillMaxSize().background(Palette.Bg)) {
             AnimatedContent(
                 targetState = screen,
                 transitionSpec = {
-                    if (targetState == Screen.Drawer) {
+                    if (targetState == Screen.Notifications) {
+                        val fromTop = (gestures[Gesture.SwipeDown] == GestureAction.NOTIFICATIONS) && lastGestureVertical
+                        if (fromTop) {
+                            slideInVertically(tween(260)) { -it / 8 } + fadeIn(tween(220)) togetherWith fadeOut(tween(140))
+                        } else {
+                            slideInHorizontally(tween(260)) { it / 4 } + fadeIn(tween(220)) togetherWith fadeOut(tween(140))
+                        }
+                    } else if (initialState == Screen.Notifications) {
+                        fadeIn(tween(220)) togetherWith
+                            (fadeOut(tween(160)) + if (lastGestureVertical) slideOutVertically(tween(200)) { -it / 8 }
+                            else slideOutHorizontally(tween(200)) { it / 4 })
+                    } else if (targetState == Screen.Drawer) {
                         (fadeIn(tween(220)) + slideInVertically(tween(260)) { it / 10 }) togetherWith fadeOut(tween(140))
                     } else {
                         fadeIn(tween(220)) togetherWith fadeOut(tween(160))
@@ -168,9 +220,35 @@ class MainActivity : ComponentActivity() {
                         onMenu = showMenu,
                         onSearch = { searchOnOpen = true; screen = Screen.Drawer },
                         onAllApps = { searchOnOpen = false; screen = Screen.Drawer },
-                        onPullShade = ::expandNotificationShade,
                         onFocus = ::toggleFocus,
                         onSettings = { screen = Screen.Settings },
+                        onGesture = { g ->
+                            lastGestureVertical = g == Gesture.SwipeDown
+                            runGesture(g)
+                        },
+                    )
+
+                    Screen.Notifications -> NotificationsScreen(
+                        hasAccess = notifAccess,
+                        items = notifRows,
+                        onOpen = ::openFromNotification,
+                        onClear = { NotifListener.dismiss(it.keys) },
+                        onClearAll = { NotifListener.dismissAll() },
+                        onGrantAccess = ::requestNotifAccess,
+                        onAppInfo = {
+                            safeStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+                        },
+                        onClose = { screen = Screen.Home },
+                    )
+
+                    Screen.GesturePicker -> GesturePickerScreen(
+                        gesture = editingGesture,
+                        current = gestures[editingGesture] ?: editingGesture.default,
+                        apps = visible,
+                        onPick = { action ->
+                            prefs.setGesture(editingGesture, action)
+                            screen = pickerReturn
+                        },
                     )
 
                     Screen.Drawer -> DrawerScreen(
@@ -196,6 +274,17 @@ class MainActivity : ComponentActivity() {
                         onFocus = ::toggleFocus,
                         onMakeDefault = ::requestDefaultHome,
                         onSystemSettings = { safeStart(Intent(Settings.ACTION_SETTINGS)) },
+                        gestures = Gesture.entries.map { g ->
+                            g.title to GestureAction.describe(gestures[g] ?: g.default) { k ->
+                                all.firstOrNull { it.key == k }?.label
+                            }
+                        },
+                        onGesture = { i ->
+                            editingGesture = Gesture.entries[i]; pickerReturn = Screen.Settings
+                            screen = Screen.GesturePicker
+                        },
+                        notifAccess = notifAccess,
+                        onNotifAccess = ::requestNotifAccess,
                     )
 
                     Screen.Hidden -> HiddenAppsScreen(
@@ -238,6 +327,33 @@ class MainActivity : ComponentActivity() {
     }
 
     // ── System integrations ──────────────────────────────────────────────
+
+    private var lastGestureVertical by mutableStateOf(false)
+
+    private fun labelFor(pkg: String): String = runCatching {
+        packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+    }.getOrDefault(pkg)
+
+    private fun openFromNotification(n: NotifApp) {
+        val entry = app.repo.apps.value.firstOrNull { it.packageName == n.packageName && it.user == n.user }
+        val ok = entry?.let { app.repo.launch(it) }
+            ?: packageManager.getLaunchIntentForPackage(n.packageName)?.let { safeStart(it, quiet = true) }
+            ?: false
+        if (!ok) toast("Can't open this app directly")
+    }
+
+    private fun requestNotifAccess() {
+        if (NotifListener.hasAccess(this)) {
+            toast("Already allowed"); return
+        }
+        val detail = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
+                .putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME, NotifListener.component(this).flattenToString())
+        } else null
+        if (detail == null || !safeStart(detail, quiet = true)) {
+            safeStart(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
+    }
 
     private fun toggleFocus() {
         if (!focus.hasAccess) {
