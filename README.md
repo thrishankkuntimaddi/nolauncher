@@ -1,5 +1,7 @@
 # NoLauncher
 
+Website: https://thrishankkuntimaddi.github.io/nolauncher/ · [Privacy](https://thrishankkuntimaddi.github.io/nolauncher/privacy.html) · [Terms](https://thrishankkuntimaddi.github.io/nolauncher/terms.html)
+
 A calm Android home screen. **No icons. No badges. No notification dots. Just names.**
 It doesn't give you more ways to open things — it gives you fewer, and holds you to your limits.
 
@@ -24,7 +26,7 @@ It doesn't give you more ways to open things — it gives you fewer, and holds y
 | Swipe down | Who's waiting (notification names) |
 | Long-press an app | Keep on home, time limit, rename, hide, info, uninstall |
 | Tap ⁘ beside search | Open the dock (circle or › closes it) |
-| Long-press the dock | Edit dock |
+| Long-press the dock | Edit dock (drag ≡ to rearrange) |
 | Long-press a panel / group title | Edit it |
 | Long-press empty home | Settings |
 
@@ -47,3 +49,7 @@ Requires JDK 17 and the Android SDK (compileSdk 36). Min Android 8.0.
 ./gradlew assembleDebug
 ./gradlew assembleRelease   # signed if a keystore.properties exists (see app/build.gradle.kts)
 ```
+
+## Google Play
+
+See [PLAY_STORE.md](PLAY_STORE.md). Build the bundle with `./gradlew :app:bundleRelease`.
