@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">NoLauncher</string>
+    <string name="limit_service_label">NoLauncher time limits</string>
+    <string name="limit_service_description">Enforces the daily time limits you set in NoLauncher. It only checks which app is open (the app\'s name) to count your time, warn you near the end and send you home when time is up. It never reads what is on your screen.</string>
 </resources>

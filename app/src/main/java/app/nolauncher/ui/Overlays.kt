@@ -62,6 +62,8 @@ fun AppMenu(
     onHide: () -> Unit,
     onInfo: () -> Unit,
     onUninstall: () -> Unit,
+    limitText: String,
+    onLimit: () -> Unit,
 ) = Scrim(onDismiss) {
     Column(
         Modifier.padding(horizontal = 32.dp),
@@ -76,6 +78,7 @@ fun AppMenu(
             homeFull -> Txt("Home is full", color = Palette.Faint, size = 20.sp, modifier = Modifier.padding(8.dp))
             else -> MenuItem("Keep on home", onTogglePin)
         }
+        MenuItem("Time limit · $limitText", onLimit)
         MenuItem("Rename", onRename)
         MenuItem("Hide", onHide)
         MenuItem("App info", onInfo)
@@ -131,5 +134,44 @@ fun RenameDialog(
                 modifier = Modifier.quietClick { onSave(value.text) }.padding(horizontal = 24.dp, vertical = 8.dp),
             )
         }
+    }
+}
+
+@Composable
+fun LimitPicker(
+    label: String,
+    usedMinutes: Int,
+    current: Int?,
+    pending: Int?,
+    onDismiss: () -> Unit,
+    onPick: (Int?) -> Unit,
+) = Scrim(onDismiss) {
+    Column(
+        Modifier.padding(horizontal = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Txt(label, size = 30.sp, weight = FontWeight.Bold, align = TextAlign.Center, maxLines = 2)
+        Txt("$usedMinutes min used today", color = Palette.Muted, size = 14.sp)
+        if (pending != null) {
+            Txt(
+                if (pending <= 0) "No limit from tomorrow" else "$pending min/day from tomorrow",
+                color = Palette.Faint, size = 13.sp,
+            )
+        }
+        Spacer(Modifier.height(18.dp))
+        val options: List<Int?> = listOf(null) + app.nolauncher.data.Limits.CHOICES
+        options.forEach { m ->
+            val selected = m == current
+            Txt(
+                if (m == null) "No limit" else "$m min a day",
+                size = 20.sp,
+                weight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selected) Palette.Ink else Palette.Muted,
+                modifier = Modifier.quietClick { onPick(m) }.padding(horizontal = 24.dp, vertical = 6.dp),
+            )
+        }
+        Spacer(Modifier.height(14.dp))
+        Txt("Stricter limits start now. Looser ones start tomorrow.", color = Palette.Faint, size = 13.sp, align = TextAlign.Center)
     }
 }

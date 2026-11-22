@@ -24,14 +24,30 @@ class Prefs(context: Context) {
     )
     val renames: StateFlow<Map<String, String>> = _renames.asStateFlow()
 
-    private val _gestures = MutableStateFlow(
-        Gesture.entries.associateWith { sp.getString(it.prefKey, it.default) ?: it.default }
-    )
-    val gestures: StateFlow<Map<Gesture, String>> = _gestures.asStateFlow()
+    private val _groups = MutableStateFlow(AppGroup.listFromJson(sp.getString(K_GROUPS, null)))
+    val groups: StateFlow<List<AppGroup>> = _groups.asStateFlow()
 
-    fun setGesture(gesture: Gesture, action: String) {
-        sp.edit { putString(gesture.prefKey, action) }
-        _gestures.value = _gestures.value + (gesture to action)
+    var groupsSeeded: Boolean
+        get() = sp.getBoolean(K_GROUPS_SEEDED, false)
+        set(value) = sp.edit { putBoolean(K_GROUPS_SEEDED, value) }
+
+    fun setGroups(groups: List<AppGroup>) {
+        _groups.value = groups
+        sp.edit { putString(K_GROUPS, AppGroup.listToJson(groups)) }
+    }
+
+    fun updateGroup(id: String, f: (AppGroup) -> AppGroup) =
+        setGroups(_groups.value.map { if (it.id == id) f(it) else it })
+
+    fun addGroup(name: String): AppGroup =
+        AppGroup(AppGroup.newId(), name, emptyList()).also { setGroups(_groups.value + it) }
+
+    fun deleteGroup(id: String) = setGroups(_groups.value.filterNot { it.id == id })
+
+    fun moveGroupUp(id: String) {
+        val l = _groups.value.toMutableList()
+        val i = l.indexOfFirst { it.id == id }
+        if (i > 0) { l.add(i - 1, l.removeAt(i)); setGroups(l) }
     }
 
     var onboarded: Boolean
@@ -70,5 +86,7 @@ class Prefs(context: Context) {
         private const val K_PINNED = "pinned"
         private const val K_HIDDEN = "hidden"
         private const val K_ONBOARDED = "onboarded"
+        private const val K_GROUPS = "groups"
+        private const val K_GROUPS_SEEDED = "groups_seeded"
     }
 }

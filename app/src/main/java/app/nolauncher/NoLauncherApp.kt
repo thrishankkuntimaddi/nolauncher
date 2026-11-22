@@ -2,6 +2,7 @@ package app.nolauncher
 
 import android.app.Application
 import app.nolauncher.data.AppRepository
+import app.nolauncher.data.Limits
 import app.nolauncher.data.Prefs
 
 class NoLauncherApp : Application() {
@@ -9,10 +10,13 @@ class NoLauncherApp : Application() {
         private set
     lateinit var repo: AppRepository
         private set
+    lateinit var limits: Limits
+        private set
 
     override fun onCreate() {
         super.onCreate()
         prefs = Prefs(this)
         repo = AppRepository(this)
+        limits = Limits(this)
     }
 }
