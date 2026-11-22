@@ -15,8 +15,8 @@ android {
         applicationId = "app.nolauncher"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.5"
+        versionCode = 7
+        versionName = "1.6"
     }
 
     // Release signing: reads a keystore.properties kept OUTSIDE the repo.

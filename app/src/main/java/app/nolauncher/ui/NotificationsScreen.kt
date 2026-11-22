@@ -23,6 +23,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -45,6 +50,23 @@ fun NotificationsScreen(
 ) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { delay(30_000); now = System.currentTimeMillis() } }
+
+    // When the list can't scroll any further up, keep pulling up to go home.
+    val close by rememberUpdatedState(onClose)
+    val swipeUpToClose = remember {
+        object : NestedScrollConnection {
+            var pulled = 0f
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && available.y < 0f) {
+                    pulled += -available.y
+                    if (pulled > 160f) { pulled = 0f; close() }
+                } else if (consumed.y != 0f) {
+                    pulled = 0f
+                }
+                return Offset.Zero
+            }
+        }
+    }
 
     Box(
         Modifier
@@ -101,7 +123,7 @@ fun NotificationsScreen(
 
             else -> {
                 LazyColumn(
-                    Modifier.fillMaxSize(),
+                    Modifier.fillMaxSize().nestedScroll(swipeUpToClose),
                     contentPadding = PaddingValues(top = 32.dp, bottom = 120.dp),
                 ) {
                     item {
